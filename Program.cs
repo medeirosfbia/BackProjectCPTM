@@ -47,6 +47,8 @@ builder.Services.AddScoped<ClienteService>();
 builder.Services.AddScoped<UsuarioRepository>();
 builder.Services.AddScoped<UsuarioService>();
 builder.Services.AddScoped<TokenService>();
+builder.Services.AddScoped<InspecaoRepository>();
+builder.Services.AddScoped<InspecaoService>();
 
 // Configure JWT authentication
 var jwtKey = builder.Configuration["Jwt:Key"];
