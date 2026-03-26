@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApiOracle", "ApiOracle.csproj", "{DC9BFDC5-358B-BE35-95B8-E60D7250FDF9}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{DC9BFDC5-358B-BE35-95B8-E60D7250FDF9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DC9BFDC5-358B-BE35-95B8-E60D7250FDF9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DC9BFDC5-358B-BE35-95B8-E60D7250FDF9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DC9BFDC5-358B-BE35-95B8-E60D7250FDF9}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {4A0E161C-35BA-49CC-8F40-05FC6F64FEA3}
+	EndGlobalSection
+EndGlobal
