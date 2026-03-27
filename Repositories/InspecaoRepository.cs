@@ -32,8 +32,8 @@ namespace ApiOracle.Repositories
                         Q4 VARCHAR2(200),
                         Q5 VARCHAR2(200),
                         Q6 VARCHAR2(200),
-                        CREATED_AT DATE,
-                        USUARIO_ID NUMBER
+                        CREATED_AT DATE NOT NULL,
+                        USUARIO_ID NUMBER NOT NULL
                     )
                 ';
             EXCEPTION

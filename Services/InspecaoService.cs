@@ -19,7 +19,11 @@ namespace ApiOracle.Services
             if (string.IsNullOrWhiteSpace(inspecao.Title))
                 throw new Exception("Title é obrigatório");
 
-            inspecao.CreatedAt = DateTime.UtcNow;
+            if (inspecao.UsuarioId <= 0)
+                throw new Exception("Inspeção deve estar relacionada a um usuário");
+
+            if (inspecao.CreatedAt == default(DateTime))
+                inspecao.CreatedAt = DateTime.UtcNow;
 
             return await _repo.InserirAsync(inspecao);
         }

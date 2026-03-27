@@ -41,6 +41,16 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 builder.Services.AddControllers();
+// CORS aberto para testes (desabilita restrições de origem)
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
 builder.Services.AddSingleton<OracleConnectionFactory>();
 builder.Services.AddScoped<ClienteRepository>();
 builder.Services.AddScoped<ClienteService>();
@@ -90,6 +100,9 @@ if (!string.IsNullOrEmpty(jwtKey))
     app.UseAuthentication();
     app.UseAuthorization();
 }
+
+// Aplicar política CORS aberta (para testes)
+app.UseCors("AllowAll");
 
 app.MapControllers();
 
