@@ -132,6 +132,18 @@ app.MapGet("/weatherforecast", () =>
 .WithName("GetWeatherForecast")
 .WithOpenApi();
 
+
+using (var scope = app.Services.CreateScope())
+{
+    var usuarioRepo = scope.ServiceProvider.GetRequiredService<UsuarioRepository>();
+    var clienteRepo = scope.ServiceProvider.GetRequiredService<ClienteRepository>();
+    var inspecaoRepo = scope.ServiceProvider.GetRequiredService<InspecaoRepository>();
+    
+    await usuarioRepo.CriarTabelaAsync();
+    await clienteRepo.CriarTabelaAsync();
+    await inspecaoRepo.CriarTabelaAsync();
+}
+
 app.Run();
 
 record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
