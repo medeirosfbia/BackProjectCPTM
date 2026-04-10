@@ -1,9 +1,13 @@
 using ApiOracle.Data;
 using ApiOracle.Repositories;
 using ApiOracle.Services;
+using DotNetEnv;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+
+// Carrega variáveis do arquivo .env (raiz do projeto) antes de construir a configuração
+Env.Load();
 
 var builder = WebApplication.CreateBuilder(args);
 
