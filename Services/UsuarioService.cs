@@ -43,5 +43,11 @@ namespace ApiOracle.Services
         public Task<IEnumerable<Usuario>> ListarAsync() => _repo.ListarAsync();
 
         public Task<Usuario?> GetByIdAsync(int id) => _repo.GetByIdAsync(id);
+
+        public Task<bool> ExisteAdminAsync() => _repo.ExisteAdminAsync();
+
+        public Task<int> ContarAdminsAsync() => _repo.ContarAdminsAsync();
+
+        public Task<bool> DeleteAsync(int id) => _repo.DeleteAsync(id);
     }
 }

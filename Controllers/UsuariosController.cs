@@ -29,30 +29,38 @@ namespace ApiOracle.Controllers
 
         public class RegisterDto
         {
-            public string NomeCompleto { get; set; }
-            public string Email { get; set; }
+            public string NomeCompleto { get; set; } = string.Empty;
+            public string Email { get; set; } = string.Empty;
             public DateTime DataNascimento { get; set; }
-            public string Senha { get; set; }
-            // Optional admin flag. It will only be applied when the caller is
-            // authenticated and already an admin. Otherwise it is ignored.
+            public string Senha { get; set; } = string.Empty;
             public bool? IsAdmin { get; set; }
         }
 
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterDto dto)
         {
-            var isAdminToSet = false;
+            var isAdminToSet = dto.IsAdmin ?? false;
 
             if (User?.Identity?.IsAuthenticated == true)
             {
                 var sub = User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
-                if (!string.IsNullOrEmpty(sub) && int.TryParse(sub, out var requesterId))
+                if (string.IsNullOrEmpty(sub) || !int.TryParse(sub, out var requesterId))
+                    return Unauthorized();
+
+                var requester = await _service.GetByIdAsync(requesterId);
+                if (requester == null)
+                    return Unauthorized();
+                if (!requester.IsAdmin)
+                    return Forbid();
+            }
+
+            if (isAdminToSet)
+            {
+                if (User?.Identity?.IsAuthenticated != true)
                 {
-                    var requester = await _service.GetByIdAsync(requesterId);
-                    if (requester != null && requester.IsAdmin)
-                    {
-                        isAdminToSet = dto.IsAdmin ?? false;
-                    }
+                    var hasAdmin = await _service.ExisteAdminAsync();
+                    if (hasAdmin)
+                        return Forbid();
                 }
             }
 
@@ -70,8 +78,8 @@ namespace ApiOracle.Controllers
 
         public class LoginDto
         {
-            public string Email { get; set; }
-            public string Senha { get; set; }
+            public string Email { get; set; } = string.Empty;
+            public string Senha { get; set; } = string.Empty;
         }
 
         [HttpPost("login")]
@@ -107,6 +115,61 @@ namespace ApiOracle.Controllers
             });
 
             return Ok(safe);
+        }
+
+        [Authorize]
+        [HttpGet("{id}")]
+        public async Task<ActionResult<Models.UsuarioDto>> GetById(int id)
+        {
+            var sub = User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(sub) || !int.TryParse(sub, out var requesterId))
+                return Unauthorized();
+
+            var requester = await _service.GetByIdAsync(requesterId);
+            if (requester == null) return Unauthorized();
+            if (!requester.IsAdmin && requester.Id != id) return Forbid();
+
+            var user = await _service.GetByIdAsync(id);
+            if (user == null) return NotFound();
+
+            var safe = new Models.UsuarioDto
+            {
+                Id = user.Id,
+                NomeCompleto = user.NomeCompleto,
+                Email = user.Email,
+                DataNascimento = user.DataNascimento,
+                IsAdmin = user.IsAdmin
+            };
+
+            return Ok(safe);
+        }
+
+        [Authorize]
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var sub = User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(sub) || !int.TryParse(sub, out var requesterId))
+                return Unauthorized();
+
+            var requester = await _service.GetByIdAsync(requesterId);
+            if (requester == null) return Unauthorized();
+            if (!requester.IsAdmin && requester.Id != id) return Forbid();
+
+            var target = await _service.GetByIdAsync(id);
+            if (target == null) return NotFound();
+
+            if (target.IsAdmin)
+            {
+                var totalAdmins = await _service.ContarAdminsAsync();
+                if (totalAdmins <= 1)
+                    return BadRequest(new { message = "Não é permitido excluir o último administrador" });
+            }
+
+            var deleted = await _service.DeleteAsync(id);
+            if (!deleted) return NotFound();
+
+            return NoContent();
         }
     }
 }

@@ -88,5 +88,33 @@ namespace ApiOracle.Repositories
 
             return await conn.QueryAsync<Usuario>(sql);
         }
+
+        public async Task<bool> ExisteAdminAsync()
+        {
+            using var conn = _factory.CreateConnection();
+
+            var sql = "SELECT COUNT(1) FROM USUARIOS WHERE IS_ADMIN = 1";
+            var total = await conn.ExecuteScalarAsync<int>(sql);
+
+            return total > 0;
+        }
+
+        public async Task<int> ContarAdminsAsync()
+        {
+            using var conn = _factory.CreateConnection();
+
+            var sql = "SELECT COUNT(1) FROM USUARIOS WHERE IS_ADMIN = 1";
+            return await conn.ExecuteScalarAsync<int>(sql);
+        }
+
+        public async Task<bool> DeleteAsync(int id)
+        {
+            using var conn = _factory.CreateConnection();
+
+            var sql = "DELETE FROM USUARIOS WHERE ID = :Id";
+            var affected = await conn.ExecuteAsync(sql, new { Id = id });
+
+            return affected > 0;
+        }
     }
 }
