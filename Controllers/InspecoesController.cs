@@ -32,6 +32,8 @@ namespace ApiOracle.Controllers
             public string Title { get; set; }
             public string Location { get; set; }
             public string Address { get; set; }
+            public double? Latitude { get; set; }
+            public double? Longitude { get; set; }
             public string Notes { get; set; }
             public string Q1 { get; set; }
             public string Q2 { get; set; }
@@ -57,6 +59,8 @@ namespace ApiOracle.Controllers
                 Title = dto.Title,
                 Location = dto.Location,
                 Address = dto.Address,
+                Latitude = dto.Latitude,
+                Longitude = dto.Longitude,
                 Notes = dto.Notes,
                 Q1 = dto.Q1,
                 Q2 = dto.Q2,
@@ -98,6 +102,8 @@ namespace ApiOracle.Controllers
                 Title = i.Title,
                 Location = i.Location,
                 Address = i.Address,
+                Latitude = i.Latitude,
+                Longitude = i.Longitude,
                 Notes = i.Notes,
                 Q1 = i.Q1,
                 Q2 = i.Q2,
@@ -111,6 +117,50 @@ namespace ApiOracle.Controllers
 
             return Ok(dto);
         }
+
+
+        [Authorize]
+        [HttpGet("usuario/{usuarioId}")]
+        public async Task<ActionResult<IEnumerable<InspecaoDto>>> ListarPorUsuarioAdmin(int usuarioId)
+        {
+            var sub = User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                      ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            if (string.IsNullOrEmpty(sub) || !int.TryParse(sub, out var requesterId))
+                return Unauthorized();
+
+            var requester = await _usuarioService.GetByIdAsync(requesterId);
+            if (requester == null) return Unauthorized();
+
+            if (!requester.IsAdmin) return Forbid();
+
+            var usuario = await _usuarioService.GetByIdAsync(usuarioId);
+            if (usuario == null) return NotFound(new { message = "Usuário não encontrado" });
+
+            var items = await _service.ListarPorUsuarioAsync(usuarioId);
+
+            var dto = items.Select(i => new InspecaoDto
+            {
+                Id = i.Id,
+                Title = i.Title,
+                Location = i.Location,
+                Address = i.Address,
+                Latitude = i.Latitude,
+                Longitude = i.Longitude,
+                Notes = i.Notes,
+                Q1 = i.Q1,
+                Q2 = i.Q2,
+                Q3 = i.Q3,
+                Q4 = i.Q4,
+                Q5 = i.Q5,
+                Q6 = i.Q6,
+                CreatedAt = i.CreatedAt,
+                UsuarioId = i.UsuarioId
+            });
+
+            return Ok(dto);
+        }
+
 
         [Authorize]
         [HttpGet("{id}")]
@@ -133,6 +183,8 @@ namespace ApiOracle.Controllers
                 Title = item.Title,
                 Location = item.Location,
                 Address = item.Address,
+                Latitude = item.Latitude,
+                Longitude = item.Longitude,
                 Notes = item.Notes,
                 Q1 = item.Q1,
                 Q2 = item.Q2,
@@ -165,6 +217,8 @@ namespace ApiOracle.Controllers
             existing.Title = dto.Title;
             existing.Location = dto.Location;
             existing.Address = dto.Address;
+            existing.Latitude = dto.Latitude;
+            existing.Longitude = dto.Longitude;
             existing.Notes = dto.Notes;
             existing.Q1 = dto.Q1;
             existing.Q2 = dto.Q2;

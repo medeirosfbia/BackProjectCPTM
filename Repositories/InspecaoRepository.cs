@@ -25,6 +25,8 @@ namespace ApiOracle.Repositories
                         TITLE VARCHAR2(200),
                         LOCATION VARCHAR2(200),
                         ADDRESS VARCHAR2(400),
+                        LATITUDE NUMBER(12, 8),
+                        LONGITUDE NUMBER(12, 8),
                         NOTES VARCHAR2(4000),
                         Q1 VARCHAR2(200),
                         Q2 VARCHAR2(200),
@@ -52,14 +54,16 @@ namespace ApiOracle.Repositories
             using var conn = _factory.CreateConnection();
 
             var sql = @"
-                INSERT INTO INSPECOES (TITLE, LOCATION, ADDRESS, NOTES, Q1, Q2, Q3, Q4, Q5, Q6, CREATED_AT, USUARIO_ID)
-                VALUES (:Title, :Location, :Address, :Notes, :Q1, :Q2, :Q3, :Q4, :Q5, :Q6, :CreatedAt, :UsuarioId)
+                INSERT INTO INSPECOES (TITLE, LOCATION, ADDRESS, LATITUDE, LONGITUDE, NOTES, Q1, Q2, Q3, Q4, Q5, Q6, CREATED_AT, USUARIO_ID)
+                VALUES (:Title, :Location, :Address, :Latitude, :Longitude, :Notes, :Q1, :Q2, :Q3, :Q4, :Q5, :Q6, :CreatedAt, :UsuarioId)
                 RETURNING ID INTO :Id";
 
             var parameters = new DynamicParameters();
             parameters.Add("Title", inspecao.Title);
             parameters.Add("Location", inspecao.Location);
             parameters.Add("Address", inspecao.Address);
+            parameters.Add("Latitude", inspecao.Latitude);
+            parameters.Add("Longitude", inspecao.Longitude);
             parameters.Add("Notes", inspecao.Notes);
             parameters.Add("Q1", inspecao.Q1);
             parameters.Add("Q2", inspecao.Q2);
@@ -85,6 +89,8 @@ namespace ApiOracle.Repositories
                     TITLE = :Title,
                     LOCATION = :Location,
                     ADDRESS = :Address,
+                    LATITUDE = :Latitude,
+                    LONGITUDE = :Longitude,
                     NOTES = :Notes,
                     Q1 = :Q1,
                     Q2 = :Q2,
@@ -101,7 +107,7 @@ namespace ApiOracle.Repositories
         {
             using var conn = _factory.CreateConnection();
 
-            var sql = @"SELECT ID, TITLE, LOCATION, ADDRESS, NOTES, Q1, Q2, Q3, Q4, Q5, Q6, CREATED_AT AS CreatedAt, USUARIO_ID AS UsuarioId FROM INSPECOES WHERE ID = :Id";
+            var sql = @"SELECT ID, TITLE, LOCATION, ADDRESS, LATITUDE, LONGITUDE, NOTES, Q1, Q2, Q3, Q4, Q5, Q6, CREATED_AT AS CreatedAt, USUARIO_ID AS UsuarioId FROM INSPECOES WHERE ID = :Id";
 
             return await conn.QueryFirstOrDefaultAsync<Inspecao>(sql, new { Id = id });
         }
@@ -110,7 +116,7 @@ namespace ApiOracle.Repositories
         {
             using var conn = _factory.CreateConnection();
 
-            var sql = @"SELECT ID, TITLE, LOCATION, ADDRESS, NOTES, Q1, Q2, Q3, Q4, Q5, Q6, CREATED_AT AS CreatedAt, USUARIO_ID AS UsuarioId FROM INSPECOES";
+            var sql = @"SELECT ID, TITLE, LOCATION, ADDRESS, LATITUDE, LONGITUDE, NOTES, Q1, Q2, Q3, Q4, Q5, Q6, CREATED_AT AS CreatedAt, USUARIO_ID AS UsuarioId FROM INSPECOES";
 
             return await conn.QueryAsync<Inspecao>(sql);
         }
@@ -119,7 +125,7 @@ namespace ApiOracle.Repositories
         {
             using var conn = _factory.CreateConnection();
 
-            var sql = @"SELECT ID, TITLE, LOCATION, ADDRESS, NOTES, Q1, Q2, Q3, Q4, Q5, Q6, CREATED_AT AS CreatedAt, USUARIO_ID AS UsuarioId FROM INSPECOES WHERE USUARIO_ID = :UsuarioId";
+            var sql = @"SELECT ID, TITLE, LOCATION, ADDRESS, LATITUDE, LONGITUDE, NOTES, Q1, Q2, Q3, Q4, Q5, Q6, CREATED_AT AS CreatedAt, USUARIO_ID AS UsuarioId FROM INSPECOES WHERE USUARIO_ID = :UsuarioId";
 
             return await conn.QueryAsync<Inspecao>(sql, new { UsuarioId = usuarioId });
         }

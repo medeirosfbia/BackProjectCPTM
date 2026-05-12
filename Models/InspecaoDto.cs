@@ -17,5 +17,7 @@ namespace ApiOracle.Models
         public string Q6 { get; set; }
         public DateTime CreatedAt { get; set; }
         public int UsuarioId { get; set; }
+        public double? Latitude { get; internal set; }
+        public double? Longitude { get; internal set; }
     }
 }

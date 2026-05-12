@@ -8,6 +8,8 @@ namespace ApiOracle.Models
         public string Title { get; set; }
         public string Location { get; set; }
         public string Address { get; set; }
+        public double? Latitude { get; set; }
+        public double? Longitude { get; set; }
         public string Notes { get; set; }
         public string Q1 { get; set; }
         public string Q2 { get; set; }
