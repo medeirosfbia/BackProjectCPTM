@@ -90,7 +90,26 @@ if (!string.IsNullOrEmpty(jwtKey))
     builder.Services.AddAuthorization();
 }
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend",
+        policy =>
+        {
+            policy
+                .WithOrigins(
+                    "http://localhost:4173",
+                    "http://localhost:5173",
+                    "http://127.0.0.1:4173",
+                    "http://127.0.0.1:5173"
+                )
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        });
+});
+
 var app = builder.Build();
+
+app.UseCors("AllowFrontend");
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
