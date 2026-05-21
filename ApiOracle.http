@@ -1,6 +1,6 @@
 @ApiOracle_HostAddress = http://localhost:5163
 
-GET {{ApiOracle_HostAddress}}/weatherforecast/
+GET {{ApiOracle_HostAddress}}/swagger/
 Accept: application/json
 
 ###
