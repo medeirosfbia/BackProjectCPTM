@@ -27,6 +27,9 @@ namespace ApiOracle.Repositories
                         ADDRESS VARCHAR2(400),
                         LATITUDE NUMBER(12, 8),
                         LONGITUDE NUMBER(12, 8),
+                        IMAGEM BLOB,
+                        IMAGEM_CONTENT_TYPE VARCHAR2(200),
+                        IMAGEM_FILE_NAME VARCHAR2(400),
                         NOTES VARCHAR2(4000),
                         Q1 VARCHAR2(200),
                         Q2 VARCHAR2(200),
@@ -47,6 +50,42 @@ namespace ApiOracle.Repositories
             ";
 
             await conn.ExecuteAsync(sql);
+
+            var addImagemSql = @"
+            BEGIN
+                EXECUTE IMMEDIATE 'ALTER TABLE INSPECOES ADD (IMAGEM BLOB)';
+            EXCEPTION
+                WHEN OTHERS THEN
+                    IF SQLCODE != -1430 THEN
+                        RAISE;
+                    END IF;
+            END;";
+
+            await conn.ExecuteAsync(addImagemSql);
+
+            var addImagemContentTypeSql = @"
+            BEGIN
+                EXECUTE IMMEDIATE 'ALTER TABLE INSPECOES ADD (IMAGEM_CONTENT_TYPE VARCHAR2(200))';
+            EXCEPTION
+                WHEN OTHERS THEN
+                    IF SQLCODE != -1430 THEN
+                        RAISE;
+                    END IF;
+            END;";
+
+            await conn.ExecuteAsync(addImagemContentTypeSql);
+
+            var addImagemFileNameSql = @"
+            BEGIN
+                EXECUTE IMMEDIATE 'ALTER TABLE INSPECOES ADD (IMAGEM_FILE_NAME VARCHAR2(400))';
+            EXCEPTION
+                WHEN OTHERS THEN
+                    IF SQLCODE != -1430 THEN
+                        RAISE;
+                    END IF;
+            END;";
+
+            await conn.ExecuteAsync(addImagemFileNameSql);
         }
 
         public async Task<int> InserirAsync(Inspecao inspecao)
@@ -137,6 +176,50 @@ namespace ApiOracle.Repositories
             var sql = @"DELETE FROM INSPECOES WHERE ID = :Id";
 
             await conn.ExecuteAsync(sql, new { Id = id });
+        }
+
+        public async Task AtualizarImagemAsync(int inspecaoId, byte[] imagem, string contentType, string? fileName)
+        {
+            using var conn = _factory.CreateConnection();
+
+            var sql = @"
+                UPDATE INSPECOES
+                SET IMAGEM = :Imagem,
+                    IMAGEM_CONTENT_TYPE = :ContentType,
+                    IMAGEM_FILE_NAME = :FileName
+                WHERE ID = :Id";
+
+            await conn.ExecuteAsync(sql, new
+            {
+                Id = inspecaoId,
+                Imagem = imagem,
+                ContentType = contentType,
+                FileName = fileName
+            });
+        }
+
+        public async Task<(byte[] Imagem, string ContentType, string? FileName)?> ObterImagemAsync(int inspecaoId)
+        {
+            using var conn = _factory.CreateConnection();
+
+            var sql = @"
+                SELECT IMAGEM AS Imagem,
+                       IMAGEM_CONTENT_TYPE AS ContentType,
+                       IMAGEM_FILE_NAME AS FileName
+                FROM INSPECOES
+                WHERE ID = :Id";
+
+            var result = await conn.QueryFirstOrDefaultAsync(sql, new { Id = inspecaoId });
+            if (result == null) return null;
+
+            byte[]? imagem = result.IMAGEM;
+            string? contentType = result.CONTENTTYPE;
+            string? fileName = result.FILENAME;
+
+            if (imagem == null || imagem.Length == 0 || string.IsNullOrWhiteSpace(contentType))
+                return null;
+
+            return (imagem, contentType, fileName);
         }
     }
 }

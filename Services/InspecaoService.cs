@@ -37,5 +37,11 @@ namespace ApiOracle.Services
         public Task<IEnumerable<Inspecao>> ListarPorUsuarioAsync(int usuarioId) => _repo.ListarPorUsuarioAsync(usuarioId);
 
         public Task DeleteAsync(int id) => _repo.DeleteAsync(id);
+
+        public Task AtualizarImagemAsync(int inspecaoId, byte[] imagem, string contentType, string? fileName) =>
+            _repo.AtualizarImagemAsync(inspecaoId, imagem, contentType, fileName);
+
+        public Task<(byte[] Imagem, string ContentType, string? FileName)?> ObterImagemAsync(int inspecaoId) =>
+            _repo.ObterImagemAsync(inspecaoId);
     }
 }

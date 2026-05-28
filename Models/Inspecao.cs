@@ -10,6 +10,9 @@ namespace ApiOracle.Models
         public string Address { get; set; }
         public double? Latitude { get; set; }
         public double? Longitude { get; set; }
+        public byte[]? Imagem { get; set; }
+        public string? ImagemContentType { get; set; }
+        public string? ImagemFileName { get; set; }
         public string Notes { get; set; }
         public string Q1 { get; set; }
         public string Q2 { get; set; }

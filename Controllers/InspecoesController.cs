@@ -4,6 +4,7 @@ using ApiOracle.Services;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
+using Microsoft.AspNetCore.StaticFiles;
 
 namespace ApiOracle.Controllers
 {
@@ -13,6 +14,7 @@ namespace ApiOracle.Controllers
     {
         private readonly InspecaoService _service;
         private readonly UsuarioService _usuarioService;
+        private static readonly FileExtensionContentTypeProvider _contentTypeProvider = new();
 
         public InspecoesController(InspecaoService service, UsuarioService usuarioService)
         {
@@ -249,6 +251,90 @@ namespace ApiOracle.Controllers
 
             await _service.DeleteAsync(id);
             return NoContent();
+        }
+
+        [Authorize]
+        [HttpPost("{id}/imagem")]
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(20_000_000)]
+        public async Task<IActionResult> UploadImagem(int id, IFormFile imagem)
+        {
+            var sub = User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(sub) || !int.TryParse(sub, out var requesterId))
+                return Unauthorized();
+
+            var requester = await _usuarioService.GetByIdAsync(requesterId);
+            if (requester == null) return Unauthorized();
+
+            var existing = await _service.GetByIdAsync(id);
+            if (existing == null) return NotFound();
+            if (!requester.IsAdmin && existing.UsuarioId != requester.Id) return Forbid();
+
+            if (imagem == null || imagem.Length == 0)
+                return BadRequest(new { message = "Arquivo de imagem é obrigatório" });
+
+            if (imagem.Length > 20_000_000)
+                return BadRequest(new { message = "Imagem excede o limite de 20MB" });
+
+            var contentType = imagem.ContentType;
+            if (string.IsNullOrWhiteSpace(contentType) || !contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { message = "Content-Type inválido. Envie um arquivo de imagem." });
+
+            await using var ms = new MemoryStream();
+            await imagem.CopyToAsync(ms);
+            var bytes = ms.ToArray();
+
+            await _service.AtualizarImagemAsync(id, bytes, contentType, imagem.FileName);
+
+            return NoContent();
+        }
+
+        [Authorize]
+        [HttpGet("{id}/imagem")]
+        public async Task<IActionResult> GetImagem(int id)
+        {
+            var sub = User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(sub) || !int.TryParse(sub, out var requesterId))
+                return Unauthorized();
+
+            var requester = await _usuarioService.GetByIdAsync(requesterId);
+            if (requester == null) return Unauthorized();
+
+            var existing = await _service.GetByIdAsync(id);
+            if (existing == null) return NotFound();
+            if (!requester.IsAdmin && existing.UsuarioId != requester.Id) return Forbid();
+
+            var img = await _service.ObterImagemAsync(id);
+            if (img == null) return NotFound(new { message = "Inspeção não possui imagem" });
+
+            var fileName = img.Value.FileName;
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                var fallbackExt = GetExtensionFromContentType(img.Value.ContentType);
+                fileName = $"inspecao_{id}{fallbackExt}";
+            }
+
+            return File(img.Value.Imagem, img.Value.ContentType, fileName);
+        }
+
+        private static string GetExtensionFromContentType(string contentType)
+        {
+            if (string.IsNullOrWhiteSpace(contentType)) return ".bin";
+
+            if (_contentTypeProvider.Mappings.Any(kvp => kvp.Value.Equals(contentType, StringComparison.OrdinalIgnoreCase)))
+            {
+                var ext = _contentTypeProvider.Mappings.First(kvp => kvp.Value.Equals(contentType, StringComparison.OrdinalIgnoreCase)).Key;
+                return ext;
+            }
+
+            return contentType.ToLowerInvariant() switch
+            {
+                "image/jpeg" => ".jpg",
+                "image/png" => ".png",
+                "image/gif" => ".gif",
+                "image/webp" => ".webp",
+                _ => ".bin"
+            };
         }
     }
 }
