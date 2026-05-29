@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace ApiOracle.Models
 {
@@ -19,5 +20,8 @@ namespace ApiOracle.Models
         public int UsuarioId { get; set; }
         public double? Latitude { get; internal set; }
         public double? Longitude { get; internal set; }
+
+        public string? ImagemUrl { get; set; }
+        public List<InspecaoFotoDto>? Photos { get; set; }
     }
 }

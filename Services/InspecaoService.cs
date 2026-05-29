@@ -43,5 +43,17 @@ namespace ApiOracle.Services
 
         public Task<(byte[] Imagem, string ContentType, string? FileName)?> ObterImagemAsync(int inspecaoId) =>
             _repo.ObterImagemAsync(inspecaoId);
+
+        public Task<int> AnexarFotoAsync(int inspecaoId, byte[] imagem, string contentType, string? fileName)
+            => _repo.InserirFotoAsync(inspecaoId, imagem, contentType, fileName, DateTime.UtcNow);
+
+        public Task<IEnumerable<InspecaoFoto>> ListarFotosAsync(int inspecaoId)
+            => _repo.ListarFotosAsync(inspecaoId);
+
+        public Task<InspecaoFoto?> ObterFotoAsync(int fotoId)
+            => _repo.ObterFotoAsync(fotoId);
+
+        public Task<InspecaoFoto?> ObterFotoMaisRecenteAsync(int inspecaoId)
+            => _repo.ObterFotoMaisRecenteAsync(inspecaoId);
     }
 }
