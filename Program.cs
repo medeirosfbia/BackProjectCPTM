@@ -61,6 +61,8 @@ builder.Services.AddScoped<UsuarioService>();
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<InspecaoRepository>();
 builder.Services.AddScoped<InspecaoService>();
+builder.Services.AddScoped<IEfluenteRepository, EfluenteRepository>();
+builder.Services.AddScoped<IEfluenteService, EfluenteService>();
 
 // Configure JWT authentication
 var jwtKey = builder.Configuration["Jwt:Key"];
@@ -134,9 +136,11 @@ using (var scope = app.Services.CreateScope())
 {
     var usuarioRepo = scope.ServiceProvider.GetRequiredService<UsuarioRepository>();
     var inspecaoRepo = scope.ServiceProvider.GetRequiredService<InspecaoRepository>();
+    var efluenteService = scope.ServiceProvider.GetRequiredService<IEfluenteService>();
     
     await usuarioRepo.CriarTabelaAsync();
     await inspecaoRepo.CriarTabelaAsync();
+    await efluenteService.CriarTabelaAsync();
 }
 
 app.Run();
