@@ -19,6 +19,11 @@ builder.WebHost.UseUrls("http://0.0.0.0:5000");
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
+    options.ResolveConflictingActions(apiDescriptions =>
+        apiDescriptions.FirstOrDefault(description =>
+            description.SupportedRequestFormats.Any(format => format.MediaType == "application/json"))
+        ?? apiDescriptions.First());
+
     options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
     {
         Name = "Authorization",

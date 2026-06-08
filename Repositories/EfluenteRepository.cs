@@ -89,8 +89,20 @@ namespace ApiOracle.Repositories
             ("TX_NOME_FOTO_04", "TxNomeFoto04"),
             ("CREATED_BY_USUARIO_ID", "CreatedByUsuarioId"),
             ("IS_DELETED", "IsDeleted"),
+            ("DELETED_AT", "DeletedAt"),
+            ("DELETED_BY", "DeletedBy"),
             ("CREATED_AT", "CreatedAt"),
             ("UPDATED_AT", "UpdatedAt")
+        };
+        private static readonly HashSet<string> UpdateIgnoredColumns = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "PK_CD_MEIO_AMBIENTE_CPTM",
+            "CREATED_AT",
+            "CREATED_BY_USUARIO_ID",
+            "UPDATED_AT",
+            "IS_DELETED",
+            "DELETED_AT",
+            "DELETED_BY"
         };
 
         public EfluenteRepository(OracleConnectionFactory factory, ILogger<EfluenteRepository> logger)
@@ -106,6 +118,9 @@ namespace ApiOracle.Repositories
             await conn.ExecuteAsync(EfluenteDatabaseSql.CreateRtEfluente);
             await conn.ExecuteAsync(EfluenteDatabaseSql.CreateSequence);
             await conn.ExecuteAsync(EfluenteDatabaseSql.AddIsDeletedColumn);
+            await conn.ExecuteAsync(EfluenteDatabaseSql.AddDeletedAtColumn);
+            await conn.ExecuteAsync(EfluenteDatabaseSql.AddDeletedByColumn);
+            await conn.ExecuteAsync(EfluenteDatabaseSql.NormalizeIsDeletedColumn);
             await conn.ExecuteAsync(EfluenteDatabaseSql.DropSpatialIndexIfExists);
         }
 
@@ -139,14 +154,15 @@ namespace ApiOracle.Repositories
         {
             using var conn = _factory.CreateConnection();
             var setters = EfluenteColumns
-                .Where(c => c.Column != "PK_CD_MEIO_AMBIENTE_CPTM" && c.Column != "CREATED_AT" && c.Column != "CREATED_BY_USUARIO_ID" && c.Column != "UPDATED_AT")
+                .Where(c => !UpdateIgnoredColumns.Contains(c.Column))
                 .Select(c => $"{c.Column} = :{c.Property}")
                 .Concat(new[] { $"GEOMETRY = {GeometrySql}", "UPDATED_AT = SYSDATE" });
 
             var sql = $@"
                 UPDATE PT_EFLUENTE
                 SET {string.Join(", ", setters)}
-                WHERE PK_CD_MEIO_AMBIENTE_CPTM = :PkCdMeioAmbienteCptm";
+                WHERE PK_CD_MEIO_AMBIENTE_CPTM = :PkCdMeioAmbienteCptm
+                  AND (IS_DELETED = 0 OR IS_DELETED IS NULL)";
 
             try
             {
@@ -159,15 +175,31 @@ namespace ApiOracle.Repositories
             }
         }
 
-        public async Task<bool> DeleteAsync(string pk)
+        public async Task<bool> DeleteAsync(string pk, int? deletedByUsuarioId)
         {
             using var conn = _factory.CreateConnection();
             return await conn.ExecuteAsync(
                 @"UPDATE PT_EFLUENTE
                   SET IS_DELETED = 1,
+                      DELETED_AT = SYSDATE,
+                      DELETED_BY = :DeletedByUsuarioId,
                       UPDATED_AT = SYSDATE
                   WHERE PK_CD_MEIO_AMBIENTE_CPTM = :Pk
                     AND (IS_DELETED = 0 OR IS_DELETED IS NULL)",
+                new { Pk = pk, DeletedByUsuarioId = deletedByUsuarioId }) > 0;
+        }
+
+        public async Task<bool> RestoreAsync(string pk)
+        {
+            using var conn = _factory.CreateConnection();
+            return await conn.ExecuteAsync(
+                @"UPDATE PT_EFLUENTE
+                  SET IS_DELETED = 0,
+                      DELETED_AT = NULL,
+                      DELETED_BY = NULL,
+                      UPDATED_AT = SYSDATE
+                  WHERE PK_CD_MEIO_AMBIENTE_CPTM = :Pk
+                    AND IS_DELETED = 1",
                 new { Pk = pk }) > 0;
         }
 
@@ -246,6 +278,16 @@ namespace ApiOracle.Repositories
             return ListarFiltradoAsync(null, page, pageSize, municipio, linha, status, data);
         }
 
+        public Task<IEnumerable<PtEfluente>> ListarExcluidosAdminAsync(int page, int pageSize)
+        {
+            return ListarExcluidosAsync(null, page, pageSize);
+        }
+
+        public Task<IEnumerable<PtEfluente>> ListarExcluidosPorUsuarioAsync(int usuarioId, int page, int pageSize)
+        {
+            return ListarExcluidosAsync(usuarioId, page, pageSize);
+        }
+
         private async Task<IEnumerable<PtEfluente>> ListarFiltradoAsync(int? usuarioId, int page, int pageSize, string? municipio, string? linha, string? status, DateTime? data)
         {
             using var conn = _factory.CreateConnection();
@@ -305,6 +347,39 @@ namespace ApiOracle.Repositories
             return result;
         }
 
+        private async Task<IEnumerable<PtEfluente>> ListarExcluidosAsync(int? usuarioId, int page, int pageSize)
+        {
+            using var conn = _factory.CreateConnection();
+            var parameters = new DynamicParameters();
+            parameters.Add("Offset", (page - 1) * pageSize);
+            parameters.Add("PageSize", pageSize);
+
+            var where = new List<string> { "IS_DELETED = 1" };
+            if (usuarioId.HasValue)
+            {
+                where.Add("CREATED_BY_USUARIO_ID = :UsuarioId");
+                parameters.Add("UsuarioId", usuarioId.Value);
+            }
+
+            var sql = $@"
+                SELECT {SelectColumns}
+                FROM PT_EFLUENTE
+                WHERE {string.Join(" AND ", where)}
+                ORDER BY DELETED_AT DESC
+                OFFSET :Offset ROWS FETCH NEXT :PageSize ROWS ONLY";
+
+            _logger.LogInformation(
+                "Query efluentes excluidos executada usuarioFiltro={UsuarioFiltro} page={Page} pageSize={PageSize} sql={Sql}",
+                usuarioId,
+                page,
+                pageSize,
+                sql);
+
+            var result = (await conn.QueryAsync<PtEfluente>(sql, parameters)).ToList();
+            _logger.LogInformation("Query efluentes excluidos retornou quantidade={Quantidade} usuarioFiltro={UsuarioFiltro}", result.Count, usuarioId);
+            return result;
+        }
+
         public async Task<int> InserirAnexoAsync(string pk, byte[] data, string? contentType, string? attName, long dataSize)
         {
             using var conn = _factory.CreateConnection();
@@ -330,15 +405,17 @@ namespace ApiOracle.Repositories
             using var conn = _factory.CreateConnection();
             var sql = @"
                 SELECT
-                    ATTACHMENTID AS AttachmentId,
-                    REL_OBJECTID AS RelObjectId,
-                    CONTENT_TYPE AS ContentType,
-                    ATT_NAME AS AttName,
-                    DATA_SIZE AS DataSize,
-                    CREATED_AT AS CreatedAt
-                FROM RT_EFLUENTE
-                WHERE REL_OBJECTID = :Pk
-                ORDER BY CREATED_AT ASC, ATTACHMENTID ASC";
+                    RT.ATTACHMENTID AS AttachmentId,
+                    RT.REL_OBJECTID AS RelObjectId,
+                    RT.CONTENT_TYPE AS ContentType,
+                    RT.ATT_NAME AS AttName,
+                    RT.DATA_SIZE AS DataSize,
+                    RT.CREATED_AT AS CreatedAt
+                FROM RT_EFLUENTE RT
+                INNER JOIN PT_EFLUENTE PT ON PT.PK_CD_MEIO_AMBIENTE_CPTM = RT.REL_OBJECTID
+                WHERE RT.REL_OBJECTID = :Pk
+                  AND (PT.IS_DELETED = 0 OR PT.IS_DELETED IS NULL)
+                ORDER BY RT.CREATED_AT ASC, RT.ATTACHMENTID ASC";
 
             return await conn.QueryAsync<RtEfluente>(sql, new { Pk = pk });
         }
@@ -348,15 +425,17 @@ namespace ApiOracle.Repositories
             using var conn = _factory.CreateConnection();
             var sql = @"
                 SELECT
-                    ATTACHMENTID AS AttachmentId,
-                    REL_OBJECTID AS RelObjectId,
-                    CONTENT_TYPE AS ContentType,
-                    ATT_NAME AS AttName,
-                    DATA_SIZE AS DataSize,
-                    DATA AS Data,
-                    CREATED_AT AS CreatedAt
-                FROM RT_EFLUENTE
-                WHERE ATTACHMENTID = :AttachmentId";
+                    RT.ATTACHMENTID AS AttachmentId,
+                    RT.REL_OBJECTID AS RelObjectId,
+                    RT.CONTENT_TYPE AS ContentType,
+                    RT.ATT_NAME AS AttName,
+                    RT.DATA_SIZE AS DataSize,
+                    RT.DATA AS Data,
+                    RT.CREATED_AT AS CreatedAt
+                FROM RT_EFLUENTE RT
+                INNER JOIN PT_EFLUENTE PT ON PT.PK_CD_MEIO_AMBIENTE_CPTM = RT.REL_OBJECTID
+                WHERE RT.ATTACHMENTID = :AttachmentId
+                  AND (PT.IS_DELETED = 0 OR PT.IS_DELETED IS NULL)";
 
             return await conn.QueryFirstOrDefaultAsync<RtEfluente>(sql, new { AttachmentId = attachmentId });
         }
@@ -461,6 +540,8 @@ BEGIN
             GEOMETRY SDO_GEOMETRY,
             CREATED_BY_USUARIO_ID NUMBER,
             IS_DELETED NUMBER(1) DEFAULT 0,
+            DELETED_AT DATE,
+            DELETED_BY NUMBER,
             CREATED_AT DATE DEFAULT SYSDATE NOT NULL,
             UPDATED_AT DATE
         )';
@@ -513,6 +594,31 @@ EXCEPTION
         IF SQLCODE != -1430 THEN
             RAISE;
         END IF;
+END;";
+
+        public const string AddDeletedAtColumn = @"
+BEGIN
+    EXECUTE IMMEDIATE 'ALTER TABLE PT_EFLUENTE ADD (DELETED_AT DATE)';
+EXCEPTION
+    WHEN OTHERS THEN
+        IF SQLCODE != -1430 THEN
+            RAISE;
+        END IF;
+END;";
+
+        public const string AddDeletedByColumn = @"
+BEGIN
+    EXECUTE IMMEDIATE 'ALTER TABLE PT_EFLUENTE ADD (DELETED_BY NUMBER)';
+EXCEPTION
+    WHEN OTHERS THEN
+        IF SQLCODE != -1430 THEN
+            RAISE;
+        END IF;
+END;";
+
+        public const string NormalizeIsDeletedColumn = @"
+BEGIN
+    EXECUTE IMMEDIATE 'UPDATE PT_EFLUENTE SET IS_DELETED = 0 WHERE IS_DELETED IS NULL';
 END;";
 
         public const string DropSpatialIndexIfExists = @"

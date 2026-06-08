@@ -20,6 +20,12 @@ namespace ApiOracle.Controllers
         {
             PropertyNameCaseInsensitive = true
         };
+        private static readonly string[] DatePayloadFields =
+        [
+            "dtDataEmissaoFormulario",
+            "dtValidadeDra",
+            "dtDataDoCadastramento"
+        ];
 
         public EfluentesController(IEfluenteService service, UsuarioService usuarioService, ILogger<EfluentesController> logger)
         {
@@ -181,6 +187,49 @@ namespace ApiOracle.Controllers
             return Ok(BuildListResponse(normalizedPage, normalizedPageSize, items));
         }
 
+        [HttpGet("/api/admin/efluentes/excluidos")]
+        public async Task<IActionResult> ListarExcluidosAdmin(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 100)
+        {
+            var requester = await GetRequesterAsync();
+            if (requester == null) return Unauthorized();
+            if (!requester.IsAdmin) return Forbid();
+
+            var normalizedPage = page < 1 ? 1 : page;
+            var normalizedPageSize = pageSize switch
+            {
+                < 1 => 100,
+                > 100 => 100,
+                _ => pageSize
+            };
+
+            var items = (await _service.ListarExcluidosAdminAsync(normalizedPage, normalizedPageSize)).ToList();
+            LogListResult("GET /api/admin/efluentes/excluidos", requester, null, normalizedPage, normalizedPageSize, null, null, "excluidos", null, items.Count);
+            return Ok(BuildListResponse(normalizedPage, normalizedPageSize, items));
+        }
+
+        [HttpGet("excluidos")]
+        public async Task<IActionResult> ListarMeusExcluidos(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 100)
+        {
+            var requester = await GetRequesterAsync();
+            if (requester == null) return Unauthorized();
+
+            var normalizedPage = page < 1 ? 1 : page;
+            var normalizedPageSize = pageSize switch
+            {
+                < 1 => 100,
+                > 100 => 100,
+                _ => pageSize
+            };
+
+            var items = (await _service.ListarExcluidosPorUsuarioAsync(requester.Id, normalizedPage, normalizedPageSize)).ToList();
+            LogListResult("GET /api/efluentes/excluidos", requester, requester.Id, normalizedPage, normalizedPageSize, null, null, "excluidos", null, items.Count);
+            return Ok(BuildListResponse(normalizedPage, normalizedPageSize, items));
+        }
+
         [HttpGet("{pk}")]
         public async Task<ActionResult<PtEfluenteResponseDto>> Get(string pk)
         {
@@ -260,10 +309,33 @@ namespace ApiOracle.Controllers
         {
             try
             {
-                var deleted = await _service.DeleteAsync(pk);
+                var deleted = await _service.DeleteAsync(pk, GetUsuarioId());
                 if (!deleted) return NotFound(new { message = "Registro nao encontrado" });
 
                 return NoContent();
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpPost("{id}/restore")]
+        public async Task<IActionResult> Restore(string id)
+        {
+            try
+            {
+                var requester = await GetRequesterAsync();
+                if (requester == null) return Unauthorized();
+                if (!requester.IsAdmin) return Forbid();
+
+                var restored = await _service.RestoreAsync(id);
+                if (!restored) return NotFound(new { message = "Registro nao encontrado ou nao esta deletado" });
+
+                var item = await _service.GetByPkAsync(id);
+                return item == null
+                    ? Ok(new { message = "Registro restaurado" })
+                    : Ok(ToResponse(item));
             }
             catch (ArgumentException ex)
             {
@@ -357,11 +429,38 @@ namespace ApiOracle.Controllers
             if (string.IsNullOrWhiteSpace(payloadJson))
                 throw new ArgumentException("Campo payload obrigatorio");
 
-            var dto = JsonSerializer.Deserialize<T>(payloadJson, JsonOptions);
-            if (dto == null)
-                throw new ArgumentException("Payload invalido");
+            try
+            {
+                var dto = JsonSerializer.Deserialize<T>(payloadJson, JsonOptions);
+                if (dto == null)
+                    throw new ArgumentException("Payload invalido");
 
-            return dto;
+                return dto;
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Payload multipart invalido para {PayloadType}. Path={Path}",
+                    typeof(T).Name,
+                    ex.Path);
+
+                throw new ArgumentException(BuildPayloadJsonErrorMessage(ex), ex);
+            }
+        }
+
+        private static string BuildPayloadJsonErrorMessage(JsonException ex)
+        {
+            var path = ex.Path ?? string.Empty;
+            var dateField = DatePayloadFields.FirstOrDefault(field =>
+                path.Contains(field, StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrWhiteSpace(dateField))
+            {
+                return $"Data invalida no campo {dateField}. Envie null ou uma data em formato ISO: yyyy-MM-dd ou yyyy-MM-ddTHH:mm:ss.";
+            }
+
+            return "Payload invalido. Verifique o JSON enviado no campo payload.";
         }
 
         private async Task AttachRequestFilesAsync(string pk)
@@ -508,6 +607,8 @@ namespace ApiOracle.Controllers
             TxNomeFoto04 = item.TxNomeFoto04,
             CreatedByUsuarioId = item.CreatedByUsuarioId,
             IsDeleted = item.IsDeleted,
+            DeletedAt = item.DeletedAt,
+            DeletedBy = item.DeletedBy,
             AttachmentCount = item.AttachmentCount,
             CreatedAt = item.CreatedAt,
             UpdatedAt = item.UpdatedAt
