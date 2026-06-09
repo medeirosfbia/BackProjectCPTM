@@ -63,6 +63,8 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton<OracleConnectionFactory>();
 builder.Services.AddScoped<UsuarioRepository>();
 builder.Services.AddScoped<UsuarioService>();
+builder.Services.AddScoped<DominioRepository>();
+builder.Services.AddScoped<DominioService>();
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<InspecaoRepository>();
 builder.Services.AddScoped<InspecaoService>();
@@ -137,15 +139,27 @@ app.MapControllers();
 // app.UseHttpsRedirection();
 
 
-using (var scope = app.Services.CreateScope())
+try
 {
-    var usuarioRepo = scope.ServiceProvider.GetRequiredService<UsuarioRepository>();
-    var inspecaoRepo = scope.ServiceProvider.GetRequiredService<InspecaoRepository>();
-    var efluenteService = scope.ServiceProvider.GetRequiredService<IEfluenteService>();
-    
-    await usuarioRepo.CriarTabelaAsync();
-    await inspecaoRepo.CriarTabelaAsync();
-    await efluenteService.CriarTabelaAsync();
+    using (var scope = app.Services.CreateScope())
+    {
+        var services = scope.ServiceProvider;
+        var usuarioRepo = services.GetRequiredService<UsuarioRepository>();
+        var inspecaoRepo = services.GetRequiredService<InspecaoRepository>();
+        var dominioRepo = services.GetRequiredService<DominioRepository>();
+        var efluenteService = services.GetRequiredService<IEfluenteService>();
+        
+        await usuarioRepo.CriarTabelaAsync();
+        await inspecaoRepo.CriarTabelaAsync();
+        await dominioRepo.CriarTabelasDominioAsync();
+        await efluenteService.CriarTabelaAsync();
+    }
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Erro fatal na inicialização do banco: {ex.Message}");
+    // Opcional: não travar a aplicação em desenvolvimento
+    // throw; 
 }
 
 app.Run();
