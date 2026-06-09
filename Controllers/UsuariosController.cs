@@ -82,6 +82,15 @@ namespace ApiOracle.Controllers
             public string Senha { get; set; } = string.Empty;
         }
 
+        public class UsuarioUpdateDto
+        {
+            public string NomeCompleto { get; set; } = string.Empty;
+            public string Email { get; set; } = string.Empty;
+            public DateTime DataNascimento { get; set; }
+            public bool? IsAdmin { get; set; }
+            public string? Senha { get; set; }
+        }
+
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDto dto)
         {
@@ -142,6 +151,51 @@ namespace ApiOracle.Controllers
             };
 
             return Ok(safe);
+        }
+
+        [Authorize]
+        [HttpPut("{id}")]
+        public async Task<ActionResult<Models.UsuarioDto>> Update(int id, [FromBody] UsuarioUpdateDto dto)
+        {
+            var sub = User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(sub) || !int.TryParse(sub, out var requesterId))
+                return Unauthorized();
+
+            var requester = await _service.GetByIdAsync(requesterId);
+            if (requester == null) return Unauthorized();
+            if (!requester.IsAdmin) return Forbid();
+
+            try
+            {
+                var updated = await _service.AtualizarAsync(
+                    id,
+                    dto.NomeCompleto,
+                    dto.Email,
+                    dto.DataNascimento,
+                    dto.IsAdmin,
+                    dto.Senha);
+
+                if (updated == null) return NotFound();
+
+                var safe = new Models.UsuarioDto
+                {
+                    Id = updated.Id,
+                    NomeCompleto = updated.NomeCompleto,
+                    Email = updated.Email,
+                    DataNascimento = updated.DataNascimento,
+                    IsAdmin = updated.IsAdmin
+                };
+
+                return Ok(safe);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         [Authorize]

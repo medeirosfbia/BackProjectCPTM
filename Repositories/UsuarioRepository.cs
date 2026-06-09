@@ -89,6 +89,31 @@ namespace ApiOracle.Repositories
             return await conn.QueryAsync<Usuario>(sql);
         }
 
+        public async Task<bool> AtualizarAsync(Usuario usuario)
+        {
+            using var conn = _factory.CreateConnection();
+
+            var sql = @"
+                UPDATE USUARIOS
+                SET NOME_COMPLETO = :NomeCompleto,
+                    EMAIL = :Email,
+                    DATA_NASCIMENTO = :DataNascimento,
+                    PASSWORD_HASH = :PasswordHash,
+                    IS_ADMIN = :IsAdmin
+                WHERE ID = :Id";
+
+            var parameters = new DynamicParameters();
+            parameters.Add("Id", usuario.Id);
+            parameters.Add("NomeCompleto", usuario.NomeCompleto);
+            parameters.Add("Email", usuario.Email);
+            parameters.Add("DataNascimento", usuario.DataNascimento);
+            parameters.Add("PasswordHash", usuario.PasswordHash);
+            parameters.Add("IsAdmin", usuario.IsAdmin ? 1 : 0);
+
+            var affected = await conn.ExecuteAsync(sql, parameters);
+            return affected > 0;
+        }
+
         public async Task<bool> ExisteAdminAsync()
         {
             using var conn = _factory.CreateConnection();

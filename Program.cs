@@ -66,8 +66,6 @@ builder.Services.AddScoped<UsuarioService>();
 builder.Services.AddScoped<DominioRepository>();
 builder.Services.AddScoped<DominioService>();
 builder.Services.AddScoped<TokenService>();
-builder.Services.AddScoped<InspecaoRepository>();
-builder.Services.AddScoped<InspecaoService>();
 builder.Services.AddScoped<IEfluenteRepository, EfluenteRepository>();
 builder.Services.AddScoped<IEfluenteService, EfluenteService>();
 
@@ -145,12 +143,12 @@ try
     {
         var services = scope.ServiceProvider;
         var usuarioRepo = services.GetRequiredService<UsuarioRepository>();
-        var inspecaoRepo = services.GetRequiredService<InspecaoRepository>();
+        var usuarioService = services.GetRequiredService<UsuarioService>();
         var dominioRepo = services.GetRequiredService<DominioRepository>();
         var efluenteService = services.GetRequiredService<IEfluenteService>();
         
         await usuarioRepo.CriarTabelaAsync();
-        await inspecaoRepo.CriarTabelaAsync();
+        await usuarioService.EnsureDefaultAdminAsync();
         await dominioRepo.CriarTabelasDominioAsync();
         await efluenteService.CriarTabelaAsync();
     }
