@@ -50,7 +50,7 @@ namespace ApiOracle.Controllers
             }
         }
 
-        [HttpPost]
+        [HttpPost("com-arquivo")]
         [Consumes("multipart/form-data")]
         public async Task<ActionResult<PtEfluenteResponseDto>> CreateMultipart()
         {
@@ -225,7 +225,7 @@ namespace ApiOracle.Controllers
             }
         }
 
-        [HttpPut("{pk}")]
+        [HttpPut("{pk}/com-arquivo")]
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> UpdateMultipart(string pk)
         {
