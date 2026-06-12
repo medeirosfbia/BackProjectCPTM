@@ -230,6 +230,33 @@ namespace ApiOracle.Controllers
             return Ok(BuildListResponse(normalizedPage, normalizedPageSize, items));
         }
 
+        [HttpGet("ultima-inspecao")]
+        public async Task<ActionResult<PtEfluenteResponseDto>> ObterUltimaInspecao()
+        {
+            try
+            {
+                var requester = await GetRequesterAsync();
+                if (requester == null) return Unauthorized();
+
+                var item = await _service.ObterUltimaInspecaoPorUsuarioAsync(requester.Id);
+                _logger.LogInformation(
+                    "Efluentes ultima inspecao endpoint={Endpoint} usuarioLogado={UsuarioId} role={Role} encontrado={Encontrado}",
+                    "GET /api/efluentes/ultima-inspecao",
+                    requester.Id,
+                    requester.IsAdmin ? "Admin" : "User",
+                    item != null);
+
+                if (item == null)
+                    return NotFound(new { message = "Nenhuma inspe\u00e7\u00e3o anterior encontrada." });
+
+                return Ok(ToResponse(item));
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         [HttpGet("{pk}")]
         public async Task<ActionResult<PtEfluenteResponseDto>> Get(string pk)
         {

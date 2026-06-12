@@ -55,6 +55,8 @@ namespace ApiOracle.Repositories
             ("TX_ID_VEICULO", "TxIdVeiculo"),
             ("TX_ID_GUIA_REMESSA", "TxIdGuiaRemessa"),
             ("NR_DISTANCIA_DA_VIA_M", "NrDistanciaDaViaM"),
+            ("TX_OFERECE_RISCO_SISTEMA_CPTM", "TxOfereceRiscoSistemaCptm"),
+            ("TX_PROPRIETARIO", "TxProprietario"),
             ("TX_OBS_CADASTRAMENTO", "TxObsCadastramento"),
             ("DT_DATA_DO_CADASTRAMENTO", "DtDataDoCadastramento"),
             ("HR_HORA_DO_CADASTRAMENTO", "HrHoraDoCadastramento"),
@@ -269,6 +271,35 @@ namespace ApiOracle.Repositories
         public Task<IEnumerable<PtEfluente>> ListarPorUsuarioAsync(int usuarioId, int page, int pageSize, string? municipio, string? linha, string? status, DateTime? data)
         {
             return ListarFiltradoAsync(usuarioId, page, pageSize, municipio, linha, status, data);
+        }
+
+        public async Task<PtEfluente?> ObterUltimaInspecaoPorUsuarioAsync(int usuarioId)
+        {
+            using var conn = _factory.CreateConnection();
+            var sql = $@"
+                SELECT {SelectColumns}
+                FROM PT_EFLUENTE
+                WHERE CREATED_BY_USUARIO_ID = :UsuarioId
+                  AND (IS_DELETED = 0 OR IS_DELETED IS NULL)
+                ORDER BY
+                    DT_DATA_DO_CADASTRAMENTO DESC NULLS LAST,
+                    HR_HORA_DO_CADASTRAMENTO DESC NULLS LAST,
+                    CREATED_AT DESC,
+                    PK_CD_MEIO_AMBIENTE_CPTM DESC
+                FETCH FIRST 1 ROWS ONLY";
+
+            _logger.LogInformation(
+                "Query ultima inspecao efluente executada usuarioFiltro={UsuarioFiltro} sql={Sql}",
+                usuarioId,
+                sql);
+
+            var result = await conn.QueryFirstOrDefaultAsync<PtEfluente>(sql, new { UsuarioId = usuarioId });
+            _logger.LogInformation(
+                "Query ultima inspecao efluente retornou encontrado={Encontrado} usuarioFiltro={UsuarioFiltro}",
+                result != null,
+                usuarioId);
+
+            return result;
         }
 
         public Task<IEnumerable<PtEfluente>> ListarAdminAsync(int page, int pageSize, string? municipio, string? linha, string? status, DateTime? data)

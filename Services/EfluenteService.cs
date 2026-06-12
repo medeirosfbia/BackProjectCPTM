@@ -72,6 +72,14 @@ namespace ApiOracle.Services
             return _repo.GetByPkAsync(pk.Trim());
         }
 
+        public Task<PtEfluente?> ObterUltimaInspecaoPorUsuarioAsync(int usuarioId)
+        {
+            if (usuarioId <= 0)
+                throw new ArgumentException("Usuario obrigatorio");
+
+            return _repo.ObterUltimaInspecaoPorUsuarioAsync(usuarioId);
+        }
+
         public Task<IEnumerable<PtEfluente>> ListarAsync(int page, int pageSize, string? municipio, string? linha, string? status, DateTime? data)
         {
             page = page < 1 ? 1 : page;

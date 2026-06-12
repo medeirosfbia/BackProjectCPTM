@@ -10,6 +10,7 @@ namespace ApiOracle.Repositories
         Task<bool> DeleteAsync(string pk, int? deletedByUsuarioId);
         Task<bool> RestoreAsync(string pk);
         Task<PtEfluente?> GetByPkAsync(string pk);
+        Task<PtEfluente?> ObterUltimaInspecaoPorUsuarioAsync(int usuarioId);
         Task<IEnumerable<PtEfluente>> ListarAsync(int page, int pageSize, string? municipio, string? linha, string? status, DateTime? data);
         Task<IEnumerable<PtEfluente>> ListarPorUsuarioAsync(int usuarioId, int page, int pageSize, string? municipio, string? linha, string? status, DateTime? data);
         Task<IEnumerable<PtEfluente>> ListarAdminAsync(int page, int pageSize, string? municipio, string? linha, string? status, DateTime? data);
