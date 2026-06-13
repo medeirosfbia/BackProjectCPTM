@@ -380,7 +380,7 @@ namespace ApiOracle.Repositories
                     (97, "Não se aplica(m)"), (98, "Inexistente(s)"), (100, "Não avaliado(a)(s)")
                 });
 
-            await CriarESeed(connection, "GEA_SIM_NÃO",
+            await CriarESeed(connection, "GEA_SIM_NAO",
                 "CREATE TABLE GEA_SIM_NÃO (CODIGO NUMBER PRIMARY KEY, DESCRICAO VARCHAR2(4000))",
                 new List<(int, string)> {
                     (1, "Sim"), (2, "Não"), (3, "Não Informado"), 

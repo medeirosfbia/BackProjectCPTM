@@ -55,7 +55,7 @@ namespace ApiOracle.Services
             => _repository.ListarItensAsync("GEA_TX_PROPRIETARIO");
 
         public Task<IEnumerable<DominioItem>> ObterSimNaoAsync()
-            => _repository.ListarItensAsync("GEA_SIM_NAO");
+            => _repository.ListarItensAsync("GEA_SIM_NÃO");
 
         public Task<IEnumerable<DominioItem>> ObterTiposAtividadeListadaAsync()
             => _repository.ListarItensAsync("EF_TX_TIPO_ATIVIDADE_LISTADA");
