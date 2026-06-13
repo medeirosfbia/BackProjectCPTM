@@ -19,6 +19,11 @@ builder.WebHost.UseUrls("http://0.0.0.0:5000");
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
+    options.ResolveConflictingActions(apiDescriptions =>
+        apiDescriptions.FirstOrDefault(description =>
+            description.SupportedRequestFormats.Any(format => format.MediaType == "application/json"))
+        ?? apiDescriptions.First());
+
     options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -58,9 +63,9 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton<OracleConnectionFactory>();
 builder.Services.AddScoped<UsuarioRepository>();
 builder.Services.AddScoped<UsuarioService>();
+builder.Services.AddScoped<DominioRepository>();
+builder.Services.AddScoped<DominioService>();
 builder.Services.AddScoped<TokenService>();
-builder.Services.AddScoped<InspecaoRepository>();
-builder.Services.AddScoped<InspecaoService>();
 builder.Services.AddScoped<IEfluenteRepository, EfluenteRepository>();
 builder.Services.AddScoped<IEfluenteService, EfluenteService>();
 
@@ -132,15 +137,27 @@ app.MapControllers();
 // app.UseHttpsRedirection();
 
 
-using (var scope = app.Services.CreateScope())
+try
 {
-    var usuarioRepo = scope.ServiceProvider.GetRequiredService<UsuarioRepository>();
-    var inspecaoRepo = scope.ServiceProvider.GetRequiredService<InspecaoRepository>();
-    var efluenteService = scope.ServiceProvider.GetRequiredService<IEfluenteService>();
-    
-    await usuarioRepo.CriarTabelaAsync();
-    await inspecaoRepo.CriarTabelaAsync();
-    await efluenteService.CriarTabelaAsync();
+    using (var scope = app.Services.CreateScope())
+    {
+        var services = scope.ServiceProvider;
+        var usuarioRepo = services.GetRequiredService<UsuarioRepository>();
+        var usuarioService = services.GetRequiredService<UsuarioService>();
+        var dominioRepo = services.GetRequiredService<DominioRepository>();
+        var efluenteService = services.GetRequiredService<IEfluenteService>();
+        
+        await usuarioRepo.CriarTabelaAsync();
+        await usuarioService.EnsureDefaultAdminAsync();
+        await dominioRepo.CriarTabelasDominioAsync();
+        await efluenteService.CriarTabelaAsync();
+    }
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Erro fatal na inicialização do banco: {ex.Message}");
+    // Opcional: não travar a aplicação em desenvolvimento
+    // throw; 
 }
 
 app.Run();

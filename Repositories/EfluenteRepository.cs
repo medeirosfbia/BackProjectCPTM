@@ -89,8 +89,20 @@ namespace ApiOracle.Repositories
             ("TX_NOME_FOTO_04", "TxNomeFoto04"),
             ("CREATED_BY_USUARIO_ID", "CreatedByUsuarioId"),
             ("IS_DELETED", "IsDeleted"),
+            ("DELETED_AT", "DeletedAt"),
+            ("DELETED_BY", "DeletedBy"),
             ("CREATED_AT", "CreatedAt"),
             ("UPDATED_AT", "UpdatedAt")
+        };
+        private static readonly HashSet<string> UpdateIgnoredColumns = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "PK_CD_MEIO_AMBIENTE_CPTM",
+            "CREATED_AT",
+            "CREATED_BY_USUARIO_ID",
+            "UPDATED_AT",
+            "IS_DELETED",
+            "DELETED_AT",
+            "DELETED_BY"
         };
 
         public EfluenteRepository(OracleConnectionFactory factory, ILogger<EfluenteRepository> logger)
@@ -106,7 +118,11 @@ namespace ApiOracle.Repositories
             await conn.ExecuteAsync(EfluenteDatabaseSql.CreateRtEfluente);
             await conn.ExecuteAsync(EfluenteDatabaseSql.CreateSequence);
             await conn.ExecuteAsync(EfluenteDatabaseSql.AddIsDeletedColumn);
+            await conn.ExecuteAsync(EfluenteDatabaseSql.AddDeletedAtColumn);
+            await conn.ExecuteAsync(EfluenteDatabaseSql.AddDeletedByColumn);
+            await conn.ExecuteAsync(EfluenteDatabaseSql.NormalizeIsDeletedColumn);
             await conn.ExecuteAsync(EfluenteDatabaseSql.DropSpatialIndexIfExists);
+            await conn.ExecuteAsync(EfluenteDatabaseSql.CreateSpatialIndex);
         }
 
         public async Task<string> InserirAsync(PtEfluente efluente)
@@ -139,14 +155,15 @@ namespace ApiOracle.Repositories
         {
             using var conn = _factory.CreateConnection();
             var setters = EfluenteColumns
-                .Where(c => c.Column != "PK_CD_MEIO_AMBIENTE_CPTM" && c.Column != "CREATED_AT" && c.Column != "CREATED_BY_USUARIO_ID" && c.Column != "UPDATED_AT")
+                .Where(c => !UpdateIgnoredColumns.Contains(c.Column))
                 .Select(c => $"{c.Column} = :{c.Property}")
                 .Concat(new[] { $"GEOMETRY = {GeometrySql}", "UPDATED_AT = SYSDATE" });
 
             var sql = $@"
                 UPDATE PT_EFLUENTE
                 SET {string.Join(", ", setters)}
-                WHERE PK_CD_MEIO_AMBIENTE_CPTM = :PkCdMeioAmbienteCptm";
+                WHERE PK_CD_MEIO_AMBIENTE_CPTM = :PkCdMeioAmbienteCptm
+                  AND (IS_DELETED = 0 OR IS_DELETED IS NULL)";
 
             try
             {
@@ -159,15 +176,31 @@ namespace ApiOracle.Repositories
             }
         }
 
-        public async Task<bool> DeleteAsync(string pk)
+        public async Task<bool> DeleteAsync(string pk, int? deletedByUsuarioId)
         {
             using var conn = _factory.CreateConnection();
             return await conn.ExecuteAsync(
                 @"UPDATE PT_EFLUENTE
                   SET IS_DELETED = 1,
+                      DELETED_AT = SYSDATE,
+                      DELETED_BY = :DeletedByUsuarioId,
                       UPDATED_AT = SYSDATE
                   WHERE PK_CD_MEIO_AMBIENTE_CPTM = :Pk
                     AND (IS_DELETED = 0 OR IS_DELETED IS NULL)",
+                new { Pk = pk, DeletedByUsuarioId = deletedByUsuarioId }) > 0;
+        }
+
+        public async Task<bool> RestoreAsync(string pk)
+        {
+            using var conn = _factory.CreateConnection();
+            return await conn.ExecuteAsync(
+                @"UPDATE PT_EFLUENTE
+                  SET IS_DELETED = 0,
+                      DELETED_AT = NULL,
+                      DELETED_BY = NULL,
+                      UPDATED_AT = SYSDATE
+                  WHERE PK_CD_MEIO_AMBIENTE_CPTM = :Pk
+                    AND IS_DELETED = 1",
                 new { Pk = pk }) > 0;
         }
 
@@ -241,9 +274,48 @@ namespace ApiOracle.Repositories
             return ListarFiltradoAsync(usuarioId, page, pageSize, municipio, linha, status, data);
         }
 
+        public async Task<PtEfluente?> ObterUltimaInspecaoPorUsuarioAsync(int usuarioId)
+        {
+            using var conn = _factory.CreateConnection();
+            var sql = $@"
+                SELECT {SelectColumns}
+                FROM PT_EFLUENTE
+                WHERE CREATED_BY_USUARIO_ID = :UsuarioId
+                  AND (IS_DELETED = 0 OR IS_DELETED IS NULL)
+                ORDER BY
+                    DT_DATA_DO_CADASTRAMENTO DESC NULLS LAST,
+                    HR_HORA_DO_CADASTRAMENTO DESC NULLS LAST,
+                    CREATED_AT DESC,
+                    PK_CD_MEIO_AMBIENTE_CPTM DESC
+                FETCH FIRST 1 ROWS ONLY";
+
+            _logger.LogInformation(
+                "Query ultima inspecao efluente executada usuarioFiltro={UsuarioFiltro} sql={Sql}",
+                usuarioId,
+                sql);
+
+            var result = await conn.QueryFirstOrDefaultAsync<PtEfluente>(sql, new { UsuarioId = usuarioId });
+            _logger.LogInformation(
+                "Query ultima inspecao efluente retornou encontrado={Encontrado} usuarioFiltro={UsuarioFiltro}",
+                result != null,
+                usuarioId);
+
+            return result;
+        }
+
         public Task<IEnumerable<PtEfluente>> ListarAdminAsync(int page, int pageSize, string? municipio, string? linha, string? status, DateTime? data)
         {
             return ListarFiltradoAsync(null, page, pageSize, municipio, linha, status, data);
+        }
+
+        public Task<IEnumerable<PtEfluente>> ListarExcluidosAdminAsync(int page, int pageSize)
+        {
+            return ListarExcluidosAsync(null, page, pageSize);
+        }
+
+        public Task<IEnumerable<PtEfluente>> ListarExcluidosPorUsuarioAsync(int usuarioId, int page, int pageSize)
+        {
+            return ListarExcluidosAsync(usuarioId, page, pageSize);
         }
 
         private async Task<IEnumerable<PtEfluente>> ListarFiltradoAsync(int? usuarioId, int page, int pageSize, string? municipio, string? linha, string? status, DateTime? data)
@@ -305,6 +377,39 @@ namespace ApiOracle.Repositories
             return result;
         }
 
+        private async Task<IEnumerable<PtEfluente>> ListarExcluidosAsync(int? usuarioId, int page, int pageSize)
+        {
+            using var conn = _factory.CreateConnection();
+            var parameters = new DynamicParameters();
+            parameters.Add("Offset", (page - 1) * pageSize);
+            parameters.Add("PageSize", pageSize);
+
+            var where = new List<string> { "IS_DELETED = 1" };
+            if (usuarioId.HasValue)
+            {
+                where.Add("CREATED_BY_USUARIO_ID = :UsuarioId");
+                parameters.Add("UsuarioId", usuarioId.Value);
+            }
+
+            var sql = $@"
+                SELECT {SelectColumns}
+                FROM PT_EFLUENTE
+                WHERE {string.Join(" AND ", where)}
+                ORDER BY DELETED_AT DESC
+                OFFSET :Offset ROWS FETCH NEXT :PageSize ROWS ONLY";
+
+            _logger.LogInformation(
+                "Query efluentes excluidos executada usuarioFiltro={UsuarioFiltro} page={Page} pageSize={PageSize} sql={Sql}",
+                usuarioId,
+                page,
+                pageSize,
+                sql);
+
+            var result = (await conn.QueryAsync<PtEfluente>(sql, parameters)).ToList();
+            _logger.LogInformation("Query efluentes excluidos retornou quantidade={Quantidade} usuarioFiltro={UsuarioFiltro}", result.Count, usuarioId);
+            return result;
+        }
+
         public async Task<int> InserirAnexoAsync(string pk, byte[] data, string? contentType, string? attName, long dataSize)
         {
             using var conn = _factory.CreateConnection();
@@ -330,15 +435,17 @@ namespace ApiOracle.Repositories
             using var conn = _factory.CreateConnection();
             var sql = @"
                 SELECT
-                    ATTACHMENTID AS AttachmentId,
-                    REL_OBJECTID AS RelObjectId,
-                    CONTENT_TYPE AS ContentType,
-                    ATT_NAME AS AttName,
-                    DATA_SIZE AS DataSize,
-                    CREATED_AT AS CreatedAt
-                FROM RT_EFLUENTE
-                WHERE REL_OBJECTID = :Pk
-                ORDER BY CREATED_AT ASC, ATTACHMENTID ASC";
+                    RT.ATTACHMENTID AS AttachmentId,
+                    RT.REL_OBJECTID AS RelObjectId,
+                    RT.CONTENT_TYPE AS ContentType,
+                    RT.ATT_NAME AS AttName,
+                    RT.DATA_SIZE AS DataSize,
+                    RT.CREATED_AT AS CreatedAt
+                FROM RT_EFLUENTE RT
+                INNER JOIN PT_EFLUENTE PT ON PT.PK_CD_MEIO_AMBIENTE_CPTM = RT.REL_OBJECTID
+                WHERE RT.REL_OBJECTID = :Pk
+                  AND (PT.IS_DELETED = 0 OR PT.IS_DELETED IS NULL)
+                ORDER BY RT.CREATED_AT ASC, RT.ATTACHMENTID ASC";
 
             return await conn.QueryAsync<RtEfluente>(sql, new { Pk = pk });
         }
@@ -348,15 +455,17 @@ namespace ApiOracle.Repositories
             using var conn = _factory.CreateConnection();
             var sql = @"
                 SELECT
-                    ATTACHMENTID AS AttachmentId,
-                    REL_OBJECTID AS RelObjectId,
-                    CONTENT_TYPE AS ContentType,
-                    ATT_NAME AS AttName,
-                    DATA_SIZE AS DataSize,
-                    DATA AS Data,
-                    CREATED_AT AS CreatedAt
-                FROM RT_EFLUENTE
-                WHERE ATTACHMENTID = :AttachmentId";
+                    RT.ATTACHMENTID AS AttachmentId,
+                    RT.REL_OBJECTID AS RelObjectId,
+                    RT.CONTENT_TYPE AS ContentType,
+                    RT.ATT_NAME AS AttName,
+                    RT.DATA_SIZE AS DataSize,
+                    RT.DATA AS Data,
+                    RT.CREATED_AT AS CreatedAt
+                FROM RT_EFLUENTE RT
+                INNER JOIN PT_EFLUENTE PT ON PT.PK_CD_MEIO_AMBIENTE_CPTM = RT.REL_OBJECTID
+                WHERE RT.ATTACHMENTID = :AttachmentId
+                  AND (PT.IS_DELETED = 0 OR PT.IS_DELETED IS NULL)";
 
             return await conn.QueryFirstOrDefaultAsync<RtEfluente>(sql, new { AttachmentId = attachmentId });
         }
@@ -388,46 +497,46 @@ BEGIN
             PK_CD_MEIO_AMBIENTE_CPTM VARCHAR2(255) NOT NULL PRIMARY KEY,
             TX_NR_ELEMENTO_MONITORAMENTO VARCHAR2(255),
             TX_NM_ELEMENTO_MONITORAMENTO VARCHAR2(255),
-            TX_SIGLA_DEPTO_MEIO_AMBIENTE VARCHAR2(255),
-            TX_STATUS_DO_DESVIO_AMBIENTAL VARCHAR2(255),
-            TX_STATUS_DO_REGISTRO_NO_BD VARCHAR2(255),
-            TX_MUNICIPIO VARCHAR2(255),
-            TX_LINHA_CPTM VARCHAR2(255),
-            TX_VIA_CPTM VARCHAR2(255),
-            TX_TRECHO_E_SENTIDO_CPTM VARCHAR2(255),
+            TX_SIGLA_DEPTO_MEIO_AMBIENTE NUMBER,
+            TX_STATUS_DO_DESVIO_AMBIENTAL NUMBER,
+            TX_STATUS_DO_REGISTRO_NO_BD NUMBER,
+            TX_MUNICIPIO NUMBER,
+            TX_LINHA_CPTM NUMBER,
+            TX_VIA_CPTM NUMBER,
+            TX_TRECHO_E_SENTIDO_CPTM NUMBER,
             TX_KM_POSTE VARCHAR2(255),
-            TX_ESTACAO_CPTM VARCHAR2(255),
-            NR_LAT_GRAU_DECIMAL_WGS84 NUMBER(12,6),
-            NR_LONG_GRAU_DECIMAL_WGS84 NUMBER(12,6),
-            NR_LAT_METROS_SIRGAS2000 NUMBER(12,6),
-            NR_LONG_METROS_SIRGAS2000 NUMBER(12,6),
+            TX_ESTACAO_CPTM NUMBER,
+            NR_LAT_GRAU_DECIMAL_WGS84 NUMBER(18,8),
+            NR_LONG_GRAU_DECIMAL_WGS84 NUMBER(18,8),
+            NR_LAT_METROS_SIRGAS2000 NUMBER(18,8),
+            NR_LONG_METROS_SIRGAS2000 NUMBER(18,8),
             TX_NM_LOCAL_ESCOPO_CONTRATUAL VARCHAR2(255),
             TX_TIPO_DE_FORMULARIO VARCHAR2(255),
             DT_DATA_EMISSAO_FORMULARIO DATE,
             NR_NUMERO_DE_FORMULARIO NUMBER,
             TX_AUTOR_PF_DO_FORMULARIO VARCHAR2(255),
-            TX_NATUREZA_DO_PGA VARCHAR2(255),
+            TX_NATUREZA_DO_PGA NUMBER,
             TX_NOME_PJ_EXECUTORA VARCHAR2(255),
-            TX_TIPO_ATIVIDADE_LISTADA VARCHAR2(255),
+            TX_TIPO_ATIVIDADE_LISTADA NUMBER,
             TX_TIPO_ATIVIDADE_N_LISTADA VARCHAR2(255),
-            TX_TIPO_DRA_LISTADO VARCHAR2(255),
+            TX_TIPO_DRA_LISTADO NUMBER,
             TX_TIPO_DRA_N_LISTADO VARCHAR2(255),
             TX_ID_DRA VARCHAR2(255),
             DT_VALIDADE_DRA DATE,
             TX_ANALISE_CPTM_APROVACAO VARCHAR2(255),
-            TX_TIPO_ATIVIDADE_CPTM VARCHAR2(255),
-            TX_NM_LOCAL_ATIV VARCHAR2(255),
+            TX_TIPO_ATIVIDADE_CPTM NUMBER,
+            TX_NM_LOCAL_ATIV NUMBER,
             TX_NM_LOCAL_ATIV_COMPLEMENTO VARCHAR2(255),
-            TX_ORIGEM_EFLUENTE VARCHAR2(255),
-            TX_FONTE_GERADORA VARCHAR2(255),
+            TX_ORIGEM_EFLUENTE NUMBER,
+            TX_FONTE_GERADORA NUMBER,
             NR_QUANTIDADE_L NUMBER,
-            TX_TIPO_DESTINACAO VARCHAR2(255),
-            TX_TIPO_VEICULO VARCHAR2(255),
+            TX_TIPO_DESTINACAO NUMBER,
+            TX_TIPO_VEICULO NUMBER,
             TX_ID_VEICULO VARCHAR2(255),
             TX_ID_GUIA_REMESSA VARCHAR2(255),
-            NR_DISTANCIA_DA_VIA_M NUMBER(12,6),
-            TX_OFERECE_RISCO_SISTEMA_CPTM VARCHAR2(255),
-            TX_PROPRIETARIO VARCHAR2(255),
+            NR_DISTANCIA_DA_VIA_M NUMBER(18,8),
+            TX_OFERECE_RISCO_SISTEMA_CPTM NUMBER,
+            TX_PROPRIETARIO NUMBER,
             TX_OBS_CADASTRAMENTO VARCHAR2(2000),
             DT_DATA_DO_CADASTRAMENTO DATE,
             HR_HORA_DO_CADASTRAMENTO VARCHAR2(5),
@@ -438,7 +547,7 @@ BEGIN
             TX_DRT_RESPONSAVEL_CADASTRO VARCHAR2(255),
             TX_NOME_PJ_DA_CONTRATADA VARCHAR2(255),
             TX_NR_CONTRATO_CONTRATADA VARCHAR2(255),
-            TX_NM_AREA_GESTORA_CPTM VARCHAR2(255),
+            TX_NM_AREA_GESTORA_CPTM NUMBER,
             TX_ID_AREA_GESTORA_CPTM VARCHAR2(255),
             TX_SIGLA_AREA_GESTORA_CPTM VARCHAR2(255),
             TX_NOME_PF_DA_REPRESENTANTE VARCHAR2(255),
@@ -461,8 +570,31 @@ BEGIN
             GEOMETRY SDO_GEOMETRY,
             CREATED_BY_USUARIO_ID NUMBER,
             IS_DELETED NUMBER(1) DEFAULT 0,
+            DELETED_AT DATE,
+            DELETED_BY NUMBER,
             CREATED_AT DATE DEFAULT SYSDATE NOT NULL,
-            UPDATED_AT DATE
+            UPDATED_AT DATE,
+            -- Foreign Keys para Tabelas de Domínio
+            CONSTRAINT FK_EFL_SIGLA_DEPTO FOREIGN KEY (TX_SIGLA_DEPTO_MEIO_AMBIENTE) REFERENCES GEA_TX_SIGLA_DEPTO_MEIO_AMBIENTE(CODIGO),
+            CONSTRAINT FK_EFL_STATUS_DESVIO FOREIGN KEY (TX_STATUS_DO_DESVIO_AMBIENTAL) REFERENCES GEA_TX_STATUS_DO_DESVIO_AMBIENTAL(CODIGO),
+            CONSTRAINT FK_EFL_STATUS_BD FOREIGN KEY (TX_STATUS_DO_REGISTRO_NO_BD) REFERENCES GEA_TX_STATUS_DO_REGISTRO_NO_BD(CODIGO),
+            CONSTRAINT FK_EFL_MUNICIPIO FOREIGN KEY (TX_MUNICIPIO) REFERENCES GEA_TX_MUNICIPIO(CODIGO),
+            CONSTRAINT FK_EFL_LINHA FOREIGN KEY (TX_LINHA_CPTM) REFERENCES GEA_TX_LINHA_CPTM(CODIGO),
+            CONSTRAINT FK_EFL_VIA FOREIGN KEY (TX_VIA_CPTM) REFERENCES GEA_TX_VIA_CPTM(CODIGO),
+            CONSTRAINT FK_EFL_TRECHO FOREIGN KEY (TX_TRECHO_E_SENTIDO_CPTM) REFERENCES GEA_TX_TRECHO_E_SENTIDO_CPTM(CODIGO),
+            CONSTRAINT FK_EFL_ESTACAO FOREIGN KEY (TX_ESTACAO_CPTM) REFERENCES GEA_TX_ESTACAO_CPTM(CODIGO),
+            CONSTRAINT FK_EFL_NATUREZA FOREIGN KEY (TX_NATUREZA_DO_PGA) REFERENCES GEA_TX_NATUREZA_DO_PGA(CODIGO),
+            CONSTRAINT FK_EFL_ATIV_LIST FOREIGN KEY (TX_TIPO_ATIVIDADE_LISTADA) REFERENCES EF_TX_TIPO_ATIVIDADE_LISTADA(CODIGO),
+            CONSTRAINT FK_EFL_DRA_LIST FOREIGN KEY (TX_TIPO_DRA_LISTADO) REFERENCES EF_TX_TIPO_DRA_LISTADO(CODIGO),
+            CONSTRAINT FK_EFL_ATIV_CPTM FOREIGN KEY (TX_TIPO_ATIVIDADE_CPTM) REFERENCES EF_TX_TIPO_ATIVIDADE_CPTM(CODIGO),
+            CONSTRAINT FK_EFL_LOCAL_ATIV FOREIGN KEY (TX_NM_LOCAL_ATIV) REFERENCES EF_TX_NM_LOCAL_ATIV(CODIGO),
+            CONSTRAINT FK_EFL_ORIGEM FOREIGN KEY (TX_ORIGEM_EFLUENTE) REFERENCES EF_TX_ORIGEM_EFLUENTE(CODIGO),
+            CONSTRAINT FK_EFL_FONTE FOREIGN KEY (TX_FONTE_GERADORA) REFERENCES EF_TX_FONTE_GERADORA(CODIGO),
+            CONSTRAINT FK_EFL_DESTINACAO FOREIGN KEY (TX_TIPO_DESTINACAO) REFERENCES EF_TX_TIPO_DESTINACAO(CODIGO),
+            CONSTRAINT FK_EFL_VEICULO FOREIGN KEY (TX_TIPO_VEICULO) REFERENCES EF_TX_TIPO_VEICULO(CODIGO),
+            CONSTRAINT FK_EFL_PROPRIETARIO FOREIGN KEY (TX_PROPRIETARIO) REFERENCES GEA_TX_PROPRIETARIO(CODIGO),
+            CONSTRAINT FK_EFL_AREA_GESTORA FOREIGN KEY (TX_NM_AREA_GESTORA_CPTM) REFERENCES GEA_TX_NM_AREA_GESTORA_CPTM(CODIGO),
+            CONSTRAINT FK_EFL_RISCO FOREIGN KEY (TX_OFERECE_RISCO_SISTEMA_CPTM) REFERENCES GEA_SIM_NAO(CODIGO)
         )';
 EXCEPTION
     WHEN OTHERS THEN
@@ -513,6 +645,31 @@ EXCEPTION
         IF SQLCODE != -1430 THEN
             RAISE;
         END IF;
+END;";
+
+        public const string AddDeletedAtColumn = @"
+BEGIN
+    EXECUTE IMMEDIATE 'ALTER TABLE PT_EFLUENTE ADD (DELETED_AT DATE)';
+EXCEPTION
+    WHEN OTHERS THEN
+        IF SQLCODE != -1430 THEN
+            RAISE;
+        END IF;
+END;";
+
+        public const string AddDeletedByColumn = @"
+BEGIN
+    EXECUTE IMMEDIATE 'ALTER TABLE PT_EFLUENTE ADD (DELETED_BY NUMBER)';
+EXCEPTION
+    WHEN OTHERS THEN
+        IF SQLCODE != -1430 THEN
+            RAISE;
+        END IF;
+END;";
+
+        public const string NormalizeIsDeletedColumn = @"
+BEGIN
+    EXECUTE IMMEDIATE 'UPDATE PT_EFLUENTE SET IS_DELETED = 0 WHERE IS_DELETED IS NULL';
 END;";
 
         public const string DropSpatialIndexIfExists = @"

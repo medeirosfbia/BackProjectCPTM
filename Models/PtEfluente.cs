@@ -77,6 +77,8 @@ namespace ApiOracle.Models
         public string? TxNomeFoto04 { get; set; }
         public int? CreatedByUsuarioId { get; set; }
         public int? IsDeleted { get; set; }
+        public DateTime? DeletedAt { get; set; }
+        public int? DeletedBy { get; set; }
         public int AttachmentCount { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }

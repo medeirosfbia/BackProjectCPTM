@@ -23,6 +23,7 @@ namespace ApiOracle.Services
                 ? Guid.NewGuid().ToString("N")
                 : dto.PkCdMeioAmbienteCptm.Trim();
             efluente.CreatedByUsuarioId = usuarioId;
+            efluente.IsDeleted = 0;
             efluente.CreatedAt = DateTime.UtcNow;
 
             await _repo.InserirAsync(efluente);
@@ -47,12 +48,20 @@ namespace ApiOracle.Services
             return await _repo.AtualizarAsync(efluente);
         }
 
-        public Task<bool> DeleteAsync(string pk)
+        public Task<bool> DeleteAsync(string pk, int? deletedByUsuarioId)
         {
             if (string.IsNullOrWhiteSpace(pk))
                 throw new ArgumentException("PK obrigatorio");
 
-            return _repo.DeleteAsync(pk.Trim());
+            return _repo.DeleteAsync(pk.Trim(), deletedByUsuarioId);
+        }
+
+        public Task<bool> RestoreAsync(string pk)
+        {
+            if (string.IsNullOrWhiteSpace(pk))
+                throw new ArgumentException("PK obrigatorio");
+
+            return _repo.RestoreAsync(pk.Trim());
         }
 
         public Task<PtEfluente?> GetByPkAsync(string pk)
@@ -61,6 +70,14 @@ namespace ApiOracle.Services
                 throw new ArgumentException("PK obrigatorio");
 
             return _repo.GetByPkAsync(pk.Trim());
+        }
+
+        public Task<PtEfluente?> ObterUltimaInspecaoPorUsuarioAsync(int usuarioId)
+        {
+            if (usuarioId <= 0)
+                throw new ArgumentException("Usuario obrigatorio");
+
+            return _repo.ObterUltimaInspecaoPorUsuarioAsync(usuarioId);
         }
 
         public Task<IEnumerable<PtEfluente>> ListarAsync(int page, int pageSize, string? municipio, string? linha, string? status, DateTime? data)
@@ -100,6 +117,32 @@ namespace ApiOracle.Services
             };
 
             return _repo.ListarAdminAsync(page, pageSize, municipio, linha, status, data);
+        }
+
+        public Task<IEnumerable<PtEfluente>> ListarExcluidosAdminAsync(int page, int pageSize)
+        {
+            page = page < 1 ? 1 : page;
+            pageSize = pageSize switch
+            {
+                < 1 => 100,
+                > 100 => 100,
+                _ => pageSize
+            };
+
+            return _repo.ListarExcluidosAdminAsync(page, pageSize);
+        }
+
+        public Task<IEnumerable<PtEfluente>> ListarExcluidosPorUsuarioAsync(int usuarioId, int page, int pageSize)
+        {
+            page = page < 1 ? 1 : page;
+            pageSize = pageSize switch
+            {
+                < 1 => 100,
+                > 100 => 100,
+                _ => pageSize
+            };
+
+            return _repo.ListarExcluidosPorUsuarioAsync(usuarioId, page, pageSize);
         }
 
         public async Task<int> AnexarAsync(string pk, byte[] data, string? contentType, string? attName, long dataSize)
